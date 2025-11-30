@@ -1,2 +1,2 @@
-# sudokus-production
-Production
+# Sudoku Easy Level Production App
+Production App
