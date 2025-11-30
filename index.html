@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku Puzzle with Lives and Notes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* --- CSS Bảng Sudoku --- */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .sudoku-grid {
+            /* Lưới 9x9 */
+            display: grid;
+            grid-template-columns: repeat(9, minmax(0, 1fr));
+            grid-template-rows: repeat(9, minmax(0, 1fr));
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+            border: 4px solid #4b5563;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            background-color: #ffffff;
+        }
+        .cell {
+            /* Kiểu dáng ô cơ bản */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 1px solid #d1d5db;
+            /* Sử dụng clamp() để font chữ responsive nhưng không bị quá nhỏ */
+            font-size: clamp(1.25rem, 5vw, 1.875rem); /* Tăng kích thước font cơ bản */
+            font-weight: 600;
+            transition: background-color 0.1s;
+            user-select: none;
+            cursor: pointer;
+            position: relative;
+            padding: 0; 
+        }
+        .fixed-cell {
+            background-color: #e5e7eb;
+            font-weight: 800;
+            color: #1f2937;
+            cursor: default;
+        }
+        /* Màu sắc cho số do người dùng nhập */
+        .correct-user-value {
+            color: #10b981; /* Green color */
+        }
+        .incorrect-user-value {
+            color: #dc2626; /* Red color */
+        }
+        .block-divider-h {
+            border-bottom-width: 3px !important;
+            border-bottom-color: #4b5563 !important;
+        }
+        .block-divider-v {
+            border-right-width: 3px !important;
+            border-right-color: #4b5563 !important;
+        }
+        .selected-cell {
+            background-color: #bfdbfe;
+        }
+        .highlight-cell {
+            background-color: #eff6ff;
+        }
+        /* Style cho Chế độ Ghi chú */
+        .note-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            width: 100%;
+            height: 100%;
+            font-size: clamp(0.7rem, 2.5vw, 0.9rem); /* Tăng kích thước ghi chú */
+            font-weight: 400;
+            color: #4b5563;
+        }
+        .note-item {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1px;
+        }
+        .message-box {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: 600;
+            z-index: 100;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+
+        /* --- CSS Modal Game Over --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 90%;
+            text-align: center;
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* --- CSS Hiệu ứng Nhấp nháy --- */
+        @keyframes flash {
+            0%, 100% { background-color: #d1fae5; } /* green-100 */
+            50% { background-color: white; }
+        }
+        .flashing {
+            /* Áp dụng hiệu ứng flash 3 lần, mỗi lần 0.2s */
+            animation: flash 0.2s 3; 
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Container chính của ứng dụng -->
+    <div id="app" class="w-full max-w-lg">
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Trò chơi Sudoku</h1>
+
+        <!-- Khu vực thông tin trạng thái: Lives, Timer, và Clock -->
+        <div id="status-bar" class="flex justify-between items-center mb-4 p-3 bg-white rounded-lg shadow-md">
+            
+            <!-- Mạng sống (Lives) -->
+            <div class="text-left">
+                <p class="text-xs font-normal text-gray-500 mb-1">Mạng sống</p>
+                <div id="lives-display" class="text-3xl text-red-500 flex space-x-1">
+                    <!-- Heart icons will be rendered here by JS -->
+                </div>
+            </div>
+
+            <!-- Đồng hồ bấm giờ (Game Timer) -->
+            <div class="text-center font-bold text-lg text-gray-800">
+                <div id="game-timer">00:00</div>
+                <p class="text-xs font-normal text-gray-500">Thời gian chơi</p>
+            </div>
+            
+            <!-- Giờ hiện tại (Real-time Clock) -->
+            <div class="text-right">
+                <p class="text-xs font-normal text-gray-500 mb-1">Giờ hiện tại</p>
+                <div id="current-clock" class="text-xl text-gray-700 font-bold">--:--:--</div>
+            </div>
+        </div>
+
+        <!-- Lưới Sudoku 9x9 -->
+        <div id="sudoku-grid" class="sudoku-grid mb-6">
+            <!-- Spinner hiển thị khi đang tải Firebase/trạng thái trò chơi -->
+            <div id="loading-spinner" class="col-span-9 row-span-9 flex justify-center items-center text-gray-500 text-lg">
+                Đang tải trò chơi...
+            </div>
+        </div>
+
+        <!-- Khu vực các nút điều khiển và bàn phím số -->
+        <div class="flex flex-col space-y-3">
+            <!-- Bàn phím số 1-9 và nút Xóa -->
+            <!-- Đã tăng kích thước nút (py-4, text-2xl) -->
+            <div id="number-pad" class="grid grid-cols-10 gap-2 p-3 bg-white rounded-lg shadow-md">
+                <!-- Các nút 1 đến 9 -->
+                <button data-value="1" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">1</button>
+                <button data-value="2" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">2</button>
+                <button data-value="3" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">3</button>
+                <button data-value="4" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">4</button>
+                <button data-value="5" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">5</button>
+                <button data-value="6" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">6</button>
+                <button data-value="7" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">7</button>
+                <button data-value="8" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">8</button>
+                <button data-value="9" class="num-btn col-span-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-4 text-2xl rounded-md shadow transition">9</button>
+                <!-- Nút Xóa (Thay thế "Xóa" bằng icon SVG) -->
+                <button data-value="0" class="num-btn col-span-1 bg-red-400 hover:bg-red-500 text-white font-bold py-4 text-2xl rounded-md shadow transition flex justify-center items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="w-7 h-7" viewBox="0 0 16 16"> <path d="M15.683 3a2 2 0 0 0-2-2h-7.08a2 2 0 0 0-1.519.698L.241 7.35a1 1 0 0 0 0 1.302l4.843 5.65A2 2 0 0 0 6.603 15h7.08a2 2 0 0 0 2-2zM5.829 5.854a.5.5 0 1 1 .707-.708l2.147 2.147 2.146-2.147a.5.5 0 1 1 .707.708L9.39 8l2.146 2.146a.5.5 0 0 1-.707.708L8.683 8.707l-2.147 2.147a.5.5 0 0 1-.707-.708L7.976 8z"/></svg>
+                </button>
+            </div>
+            
+            <div class="flex space-x-3">
+                 <!-- Nút chuyển đổi Chế độ Ghi chú -->
+                <button id="note-mode-btn" class="flex-1 font-bold py-3 px-4 rounded-lg shadow-lg transition text-white" 
+                        data-mode="solution">
+                    Chế độ Giải quyết (OFF)
+                </button>
+                <!-- Nút Bắt đầu Ván Mới -->
+                <button id="new-game-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition">
+                    Ván Mới
+                </button>
+            </div>
+            
+        </div>
+
+    </div>
+
+    <!-- Modal Game Over (Ban đầu bị ẩn) -->
+    <div id="game-over-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 class="text-3xl font-extrabold text-red-600 mb-4">THUA CUỘC!</h2>
+            <p class="text-lg text-gray-700 mb-6">Rất tiếc! Bạn đã mắc lỗi 3 lần và trò chơi kết thúc!</p>
+            <div class="flex flex-col space-y-3 sm:flex-row sm:space-x-4 sm:space-y-0">
+                <button id="modal-new-game-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg shadow-md transition">
+                    Ván Mới
+                </button>
+                <button id="modal-show-solution-btn" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-md transition">
+                    Đáp án
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thẻ Audio cho Hiệu ứng Âm thanh -->
+    <audio id="audio-correct" src="https://firebasestorage.googleapis.com/v0/b/drive-clone-6f3ee.appspot.com/o/files%2Fduolingo-correct%20(1)%20(mp3cut.net)%20(1).mp3?alt=media&token=d2242c23-ae72-44c4-9b72-578520f017ed" preload="auto"></audio>
+    <audio id="audio-wrong" src="https://firebasestorage.googleapis.com/v0/b/drive-clone-6f3ee.appspot.com/o/files%2Fduolingo-wrong%20(mp3cut.net).mp3?alt=media&token=c2b5e885-830a-4b3e-9122-7ab967892311" preload="auto"></audio>
+    <audio id="audio-complete" src="https://firebasestorage.googleapis.com/v0/b/drive-clone-6f3ee.appspot.com/o/files%2Fduolingo-complete-lesson-sound-effect%20(mp3cut.net).mp3?alt=media&token=3089c96c-1b91-4b4c-9470-c4f3610d85a7" preload="auto"></audio>
+    <audio id="audio-game-over" src="https://firebasestorage.googleapis.com/v0/b/drive-clone-6f3ee.appspot.com/o/files%2FDuolingo%20fail%20sound%20Effect%20(mp3cut.net).mp3?alt=media&token=824cba70-3053-453f-a787-4a50c01d47a7" preload="auto"></audio>
+
+
+    <!-- Firebase Imports: Tải thư viện Firebase qua CDN -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL VARIABLES (BIẾN TOÀN CỤC) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+        
+        let app; 
+        let db; 
+        let auth; 
+        
+        let userId = 'loading'; 
+        let currentBoard = []; 
+        let selectedCell = { row: null, col: null }; 
+        let isAuthReady = false; 
+        let isFirestoreAvailable = false; 
+
+        let gameLives = 3; 
+        let isNoteMode = false; 
+        let isSolutionShown = false; 
+        
+        let gameStartTime = null; 
+        let timerInterval = null; 
+        let isGameRunning = false;
+        
+        const COLLECTION_NAME = 'sudoku_game';
+        const GAME_ID = 'main_game_state'; 
+        const PUBLIC_PATH = `/artifacts/${appId}/public/data/${COLLECTION_NAME}`; 
+        const MAX_LIVES = 3;
+        const MAX_NOTES = 3; 
+
+        // --- UTILITY FUNCTIONS (HÀM TIỆN ÍCH) ---
+
+        /**
+         * Phát hiệu ứng âm thanh bằng ID của thẻ <audio>.
+         */
+        function playSound(soundId) {
+            try {
+                const sound = document.getElementById(soundId);
+                sound.currentTime = 0; // Tua lại đầu để phát lại nhanh
+                sound.play();
+            } catch (e) {
+                console.warn("Could not play sound", soundId, e);
+            }
+        }
+
+        /**
+         * Hiển thị thông báo ngắn gọn cho người dùng.
+         */
+        function showMessage(message, type = 'info') {
+            if (type === 'info') return; 
+            
+            const appDiv = document.getElementById('app');
+            let bgColor;
+            if (type === 'success') bgColor = 'bg-green-500';
+            else if (type === 'error') bgColor = 'bg-red-500';
+            else bgColor = 'bg-blue-500';
+
+            const msgBox = document.createElement('div');
+            msgBox.className = `message-box ${bgColor} opacity-0`;
+            msgBox.textContent = message;
+            appDiv.prepend(msgBox);
+
+            setTimeout(() => {
+                msgBox.style.opacity = '1';
+                msgBox.style.transform = 'translateX(-50%) translateY(0)';
+            }, 50);
+
+            setTimeout(() => {
+                msgBox.style.opacity = '0';
+                msgBox.style.transform = 'translateX(-50%) translateY(-20px)';
+                setTimeout(() => msgBox.remove(), 3000);
+            }, 3000);
+        }
+
+        /**
+         * Hiển thị Modal Game Over.
+         */
+        function showGameOverModal() {
+            document.getElementById('game-over-modal').classList.remove('hidden');
+        }
+
+        /**
+         * Ẩn Modal Game Over.
+         */
+        function hideGameOverModal() {
+            document.getElementById('game-over-modal').classList.add('hidden');
+        }
+
+        /**
+         * Cập nhật hiển thị số mạng sống (heart icons).
+         * Thay thế mã HTML entity bằng SVG.
+         */
+        function updateLivesDisplay() {
+            const display = document.getElementById('lives-display');
+            display.innerHTML = '';
+            
+            // Icon Trái tim Đầy (bi-heart-fill)
+            const fullHeartSVG = '<svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="currentColor" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314"/></svg>';
+            
+            // Icon Trái tim Rỗng (bi-heart)
+            const emptyHeartSVG = '<svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="currentColor" viewBox="0 0 16 16"> <path d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143q.09.083.176.171a3 3 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15"/></svg>';
+
+            for (let i = 0; i < gameLives; i++) {
+                const heart = document.createElement('span');
+                heart.innerHTML = fullHeartSVG; 
+                display.appendChild(heart);
+            }
+            
+            for (let i = gameLives; i < MAX_LIVES; i++) {
+                 const emptyHeart = document.createElement('span');
+                emptyHeart.innerHTML = emptyHeartSVG; 
+                emptyHeart.className = 'text-gray-300';
+                display.appendChild(emptyHeart);
+            }
+            
+            // Nếu hết mạng, dừng đồng hồ, phát âm thanh và hiển thị modal
+            if (gameLives <= 0) {
+                stopTimer();
+                if (!isSolutionShown) { // Chỉ phát âm thanh nếu chưa xem đáp án
+                    playSound('audio-game-over');
+                    showGameOverModal();
+                }
+            } else {
+                hideGameOverModal();
+            }
+        }
+        
+        /**
+         * Cập nhật hiển thị nút Chế độ Ghi chú.
+         */
+        function updateNoteModeButton() {
+            const btn = document.getElementById('note-mode-btn');
+            if (isNoteMode) {
+                btn.textContent = "Chế độ Ghi chú (ON)";
+                btn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+                btn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+            } else {
+                btn.textContent = "Chế độ Giải quyết (OFF)";
+                btn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                btn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+            }
+        }
+        
+        /**
+         * Format thời gian thành MM:SS. (e.g., 65 -> 01:05)
+         */
+        function formatTime(totalSeconds) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        /**
+         * Khởi động đồng hồ bấm giờ trò chơi.
+         */
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            
+            if (gameStartTime === null) {
+                gameStartTime = Date.now();
+            }
+            
+            isGameRunning = true;
+            
+            timerInterval = setInterval(updateTimerDisplay, 1000);
+            updateTimerDisplay();
+        }
+
+        /**
+         * Dừng đồng hồ bấm giờ trò chơi.
+         */
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            isGameRunning = false;
+        }
+
+        /**
+         * Cập nhật hiển thị đồng hồ bấm giờ.
+         */
+        function updateTimerDisplay() {
+            if (gameStartTime === null || !isGameRunning) return;
+            
+            const elapsedTime = Math.floor((Date.now() - gameStartTime) / 1000);
+            document.getElementById('game-timer').textContent = formatTime(elapsedTime);
+        }
+        
+        /**
+         * Cập nhật hiển thị đồng hồ hiện tại (real-time clock).
+         */
+        function updateClockDisplay() {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            document.getElementById('current-clock').textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        // --- SUDOKU LOGIC (LOGIC TRÒ CHƠI SUDOKU) ---
+
+        // Mẫu bảng đã giải đơn giản 
+        const solvedTemplate = [
+            [5, 3, 4, 6, 7, 8, 9, 1, 2],
+            [6, 7, 2, 1, 9, 5, 3, 4, 8],
+            [1, 9, 8, 3, 4, 2, 5, 6, 7],
+            [8, 5, 9, 7, 6, 1, 4, 2, 3],
+            [4, 2, 6, 8, 5, 3, 7, 9, 1],
+            [7, 1, 3, 9, 2, 4, 8, 5, 6],
+            [9, 6, 1, 5, 3, 7, 2, 8, 4],
+            [2, 8, 7, 4, 1, 9, 6, 3, 5],
+            [3, 4, 5, 2, 8, 6, 1, 7, 9]
+        ];
+
+        /** (Hàm generateBoard, isValid, solveSudoku không thay đổi) */
+        function generateBoard() {
+            let board = JSON.parse(JSON.stringify(solvedTemplate));
+
+            const swapRows = (block, r1, r2) => {
+                const rowA = block * 3 + r1;
+                const rowB = block * 3 + r2;
+                [board[rowA], board[rowB]] = [board[rowB], board[rowA]];
+            };
+
+            const swapCols = (block, c1, c2) => {
+                const colA = block * 3 + c1;
+                const colB = block * 3 + c2;
+                for (let r = 0; r < 9; r++) {
+                    [board[r][colA], board[r][colB]] = [board[r][colB], board[r][colA]];
+                }
+            };
+
+            for (let i = 0; i < 3; i++) {
+                swapRows(i, Math.floor(Math.random() * 3), Math.floor(Math.random() * 3));
+                swapCols(i, Math.floor(Math.random() * 3), Math.floor(Math.random() * 3));
+            }
+
+            if (Math.random() > 0.5) {
+                let newBoard = Array.from({ length: 9 }, () => Array(9).fill(0));
+                for (let r = 0; r < 9; r++) {
+                    for (let c = 0; c < 9; c++) {
+                        newBoard[r][c] = board[c][r];
+                    }
+                }
+                board = newBoard;
+            }
+
+            const cellsToRemove = 40 + Math.floor(Math.random() * 10); 
+            let removedCount = 0;
+            let initialBoard = JSON.parse(JSON.stringify(board));
+
+            while (removedCount < cellsToRemove) {
+                const r = Math.floor(Math.random() * 9);
+                const c = Math.floor(Math.random() * 9);
+                if (initialBoard[r][c] !== 0) {
+                    initialBoard[r][c] = 0;
+                    removedCount++;
+                }
+            }
+
+            return initialBoard;
+        }
+
+        function isValid(board, row, col, num) {
+            for (let i = 0; i < 9; i++) {
+                if (board[row][i] === num && i !== col) return false;
+                if (board[i][col] === num && i !== row) return false;
+            }
+
+            const startRow = Math.floor(row / 3) * 3;
+            const startCol = Math.floor(col / 3) * 3;
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const checkRow = startRow + r;
+                    const checkCol = startCol + c;
+                    if (checkRow !== row || checkCol !== col) { 
+                        if (board[checkRow][checkCol] === num) return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function solveSudoku(board) {
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                    if (board[r][c] === 0) {
+                        for (let num = 1; num <= 9; num++) {
+                            if (isValid(board, r, c, num)) {
+                                board[r][c] = num;
+                                if (solveSudoku(board)) {
+                                    return board;
+                                }
+                                board[r][c] = 0; 
+                            }
+                        }
+                        return null; 
+                    }
+                }
+            }
+            return board; 
+        }
+
+        /**
+         * Hiển thị lời giải bằng cách điền tất cả các ô trống với solvedValue.
+         */
+        function showSolution() {
+            if (isSolutionShown) return;
+            isSolutionShown = true;
+            stopTimer();
+            hideGameOverModal(); 
+            
+            currentBoard.forEach(row => {
+                row.forEach(cell => {
+                    if (cell.value === 0) {
+                        cell.value = cell.solvedValue;
+                        cell.isError = false; 
+                    }
+                    cell.notes = [];
+                });
+            });
+            saveBoard();
+            renderBoard(); // Cần render lại để hiển thị đáp án
+        }
+
+        // --- FIREBASE / STATE FUNCTIONS (HÀM FIREBASE / TRẠNG THÁI) ---
+
+        /**
+         * Lưu trạng thái trò chơi vào Firestore.
+         */
+        async function saveBoard() {
+            // KHÔNG LƯU NẾU FIREBASE KHÔNG KHẢ DỤNG
+            if (!isFirestoreAvailable || !isAuthReady) return console.log("Firestore not available or Auth not ready, skipping save."); 
+            try {
+                const gameDocRef = doc(db, PUBLIC_PATH, GAME_ID);
+                
+                const boardToSave = currentBoard.map(row => 
+                    row.map(cell => ({
+                        value: cell.value, 
+                        isFixed: cell.isFixed, 
+                        solvedValue: cell.solvedValue,
+                        isError: cell.isError || false, 
+                        notes: cell.notes || [] 
+                    }))
+                );
+
+                await setDoc(gameDocRef, {
+                    board: JSON.stringify(boardToSave), 
+                    gameLives: gameLives, 
+                    isNoteMode: isNoteMode, 
+                    gameStartTime: gameStartTime,
+                    isSolutionShown: isSolutionShown, 
+                    lastUpdated: Date.now(),
+                    userId: userId, 
+                });
+                console.log("Game state saved successfully to Firestore."); 
+            } catch (error) {
+                console.error("Error saving board:", error); 
+            }
+        }
+
+        /**
+         * Lắng nghe cập nhật thời gian thực cho trạng thái trò chơi từ Firestore.
+         */
+        function listenForBoardUpdates() {
+            // KHÔNG LẮNG NGHE NẾU FIREBASE KHÔNG KHẢ DỤNG
+            if (!isFirestoreAvailable || !isAuthReady) return; 
+
+            const gameDocRef = doc(db, PUBLIC_PATH, GAME_ID);
+            
+            onSnapshot(gameDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    
+                    // 1. Tải trạng thái trò chơi toàn cục
+                    gameLives = data.gameLives !== undefined ? data.gameLives : MAX_LIVES;
+                    isNoteMode = data.isNoteMode !== undefined ? data.isNoteMode : false;
+                    gameStartTime = data.gameStartTime !== undefined ? data.gameStartTime : null;
+                    isSolutionShown = data.isSolutionShown !== undefined ? data.isSolutionShown : false;
+
+                    updateLivesDisplay();
+                    updateNoteModeButton();
+                    
+                    const isGameOver = gameLives <= 0 || (currentBoard.length > 0 && checkWinCondition(currentBoard, true));
+
+                    if (gameStartTime !== null && !isGameOver && !isSolutionShown) {
+                        startTimer();
+                    } else {
+                        stopTimer();
+                    }
+
+
+                    if (data.board) {
+                        try {
+                            const savedBoard = JSON.parse(data.board);
+                            
+                            // 2. Tải bảng và chuẩn bị
+                            currentBoard = savedBoard.map(row => 
+                                row.map(cell => ({
+                                    value: cell.value,
+                                    isFixed: cell.isFixed,
+                                    solvedValue: cell.solvedValue,
+                                    isError: cell.isError || false, 
+                                    notes: cell.notes || [], 
+                                }))
+                            );
+                            
+                            // Chỉ kiểm tra điều kiện thắng nếu chưa xem lời giải và chưa hết mạng
+                            if (!isSolutionShown && gameLives > 0) {
+                                checkWinCondition(currentBoard);
+                            }
+
+                            renderBoard();
+
+                        } catch (e) {
+                            console.error("Error parsing board data from Firestore. Starting new game.", e); 
+                            startNewGame();
+                        }
+                    } else {
+                        console.log("No existing board found. Starting new game."); 
+                        startNewGame();
+                    }
+                } else {
+                    console.log("Document not found. Starting new game.");
+                    startNewGame();
+                }
+            }, (error) => {
+                console.error("Error listening to board updates:", error); 
+            });
+        }
+
+        /**
+         * Tạo một câu đố Sudoku mới, đặt lại mạng sống và trạng thái.
+         */
+        function startNewGame() {
+            const initialBoardData = generateBoard();
+            const solvedBoard = solveSudoku(JSON.parse(JSON.stringify(initialBoardData)));
+
+            if (!solvedBoard) {
+                console.error("Failed to generate a solvable puzzle. Retrying."); 
+                return startNewGame();
+            }
+
+            // Thiết lập trạng thái ban đầu
+            gameLives = MAX_LIVES;
+            isNoteMode = false;
+            isSolutionShown = false;
+            gameStartTime = Date.now(); // Bắt đầu đồng hồ bấm giờ mới
+            startTimer();
+            hideGameOverModal();
+            
+            currentBoard = initialBoardData.map((row, rowIndex) =>
+                row.map((val, colIndex) => {
+                    const solvedValue = solvedBoard[rowIndex][colIndex];
+                    return {
+                        value: val, 
+                        isFixed: val !== 0, 
+                        isError: false, 
+                        solvedValue: solvedValue,
+                        notes: [], 
+                    };
+                })
+            );
+
+            selectedCell = { row: null, col: null };
+            renderBoard(); // Render ngay lập tức
+            saveBoard(); // Lệnh này chỉ chạy nếu Firestore khả dụng
+        }
+
+        // --- UI RENDER/INPUT HANDLERS (HIỂN THỊ UI/XỬ LÝ ĐẦU VÀO) ---
+        
+        /**
+         * Kiểm tra xem một hàng/cột/khối đã hoàn thành VÀ chính xác chưa.
+         * @returns {boolean} True nếu hoàn thành và chính xác.
+         */
+        function checkUnitCompletion(r, c) {
+            const grid = document.getElementById('sudoku-grid');
+            let unitsToAnimate = []; // Lưu trữ các mảng ô cần nhấp nháy
+            
+            // Check Row
+            let isRowComplete = true;
+            let rowCells = [];
+            for (let i = 0; i < 9; i++) {
+                const cellData = currentBoard[r][i];
+                if (cellData.value === 0 || cellData.value !== cellData.solvedValue) {
+                    isRowComplete = false;
+                    break;
+                }
+                rowCells.push(grid.querySelector(`[data-row="${r}"][data-col="${i}"]`));
+            }
+            if (isRowComplete) unitsToAnimate.push(rowCells);
+
+            // Check Column
+            let isColComplete = true;
+            let colCells = [];
+            for (let i = 0; i < 9; i++) {
+                const cellData = currentBoard[i][c];
+                if (cellData.value === 0 || cellData.value !== cellData.solvedValue) {
+                    isColComplete = false;
+                    break;
+                }
+                colCells.push(grid.querySelector(`[data-row="${i}"][data-col="${c}"]`));
+            }
+            if (isColComplete) unitsToAnimate.push(colCells);
+
+            // Check Block
+            let isBlockComplete = true;
+            let blockCells = [];
+            const startRow = Math.floor(r / 3) * 3;
+            const startCol = Math.floor(c / 3) * 3;
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    const cellData = currentBoard[startRow + i][startCol + j];
+                    if (cellData.value === 0 || cellData.value !== cellData.solvedValue) {
+                        isBlockComplete = false;
+                        break;
+                    }
+                    blockCells.push(grid.querySelector(`[data-row="${startRow + i}"][data-col="${startCol + j}"]`));
+                }
+                if (!isBlockComplete) break;
+            }
+            if (isBlockComplete) unitsToAnimate.push(blockCells);
+
+            // Phát âm thanh VÀ nhấp nháy nếu có bất kỳ đơn vị nào hoàn thành
+            if (unitsToAnimate.length > 0) {
+                playSound('audio-complete');
+                unitsToAnimate.forEach(cellArray => {
+                    // Áp dụng lớp flashing
+                    cellArray.forEach(cell => cell.classList.add('flashing'));
+                    // Xóa lớp sau khi hiệu ứng kết thúc (0.2s * 3 = 600ms)
+                    setTimeout(() => {
+                        cellArray.forEach(cell => cell.classList.remove('flashing'));
+                    }, 600);
+                });
+            }
+        }
+
+
+        /**
+         * Kiểm tra xem bảng đã hoàn thành và chính xác chưa.
+         */
+        function checkWinCondition(board, silent = false) {
+            if (!board || board.length === 0 || gameLives <= 0 || isSolutionShown) return false;
+            
+            const isCompleteAndCorrect = board.every(row => 
+                row.every(cell => cell.value !== 0 && cell.value === cell.solvedValue)
+            );
+
+            if (isCompleteAndCorrect) {
+                stopTimer(); // Dừng đồng hồ khi thắng
+                if (!silent) {
+                    showMessage("Chúc mừng! Bạn đã giải được câu đố chính xác!", 'success');
+                    playSound('audio-complete'); // Phát âm thanh chiến thắng
+                }
+                return true;
+            } 
+            return false;
+        }
+        
+        /**
+         * Xử lý đầu vào từ bàn phím số hoặc bàn phím máy tính.
+         */
+        function handleInput(value) {
+            if (gameLives <= 0 || isSolutionShown) {
+                return;
+            }
+
+            const { row, col } = selectedCell;
+            if (row === null || col === null) {
+                return; 
+            }
+
+            const cell = currentBoard[row][col];
+            if (cell.isFixed) {
+                showMessage("Đây là số cố định ban đầu.", 'error');
+                return;
+            }
+
+            let playedCorrectSound = false;
+
+            if (isNoteMode) {
+                // --- LOGIC CHẾ ĐỘ GHI CHÚ (CHỈ CHO PHÉP TỐI ĐA 3 GHI CHÚ) ---
+                if (value !== 0) {
+                    // Nếu nhập giá trị, xóa giá trị lớn nếu có
+                    if (cell.value !== 0) cell.value = 0; 
+                    
+                    const noteIndex = cell.notes.indexOf(value);
+                    if (noteIndex > -1) {
+                        // Xóa ghi chú (Toggled OFF)
+                        cell.notes.splice(noteIndex, 1); 
+                    } else {
+                        // Thêm ghi chú (Toggled ON)
+                        if (cell.notes.length < MAX_NOTES) {
+                            cell.notes.push(value); 
+                            cell.notes.sort((a, b) => a - b); 
+                        } else {
+                            showMessage(`Bạn chỉ có thể ghi chú tối đa ${MAX_NOTES} số trong một ô.`, 'error');
+                            return; // Dừng lại, không lưu
+                        }
+                    }
+                } else {
+                    // Xóa tất cả ghi chú
+                    cell.notes = []; 
+                }
+                
+            } else {
+                // --- LOGIC CHẾ ĐỘ GIẢI QUYẾT ---
+                
+                if (value !== 0) cell.notes = []; // Xóa ghi chú khi nhập giá trị
+
+                const oldValue = cell.value;
+                cell.value = value;
+                
+                // 2. Kiểm tra Lỗi và Mất Mạng
+                if (value !== 0 && oldValue !== value) {
+                    if (value !== cell.solvedValue) {
+                        // LỖI: Giá trị nhập vào sai so với lời giải
+                        cell.isError = true; // Đánh dấu ô màu đỏ
+                        gameLives = Math.max(0, gameLives - 1);
+                        playSound('audio-wrong'); // Phát âm thanh LỖI
+                        const remainingLives = gameLives;
+                        if (remainingLives > 0) {
+                            showMessage(`Lỗi! Bạn còn ${remainingLives} mạng.`, 'error');
+                        }
+                    } else {
+                        // ĐÚNG: Giá trị nhập vào khớp với lời giải
+                        cell.isError = false; // Đánh dấu ô màu xanh
+                        playSound('audio-correct'); // Phát âm thanh ĐÚNG
+                        playedCorrectSound = true;
+                    }
+                } else if (value === 0) {
+                    cell.isError = false; // Xóa lỗi khi xóa giá trị
+                }
+            }
+            
+            saveBoard();
+            
+            // Kiểm tra chiến thắng TOÀN BỘ BẢNG trước
+            const isWin = checkWinCondition(currentBoard);
+            
+            // Nếu không thắng toàn bộ BẢNG, VÀ vừa chơi một nước ĐÚNG,
+            // thì kiểm tra xem có hoàn thành HÀNG/CỘT/KHỐI không
+            if (!isWin && playedCorrectSound) {
+                checkUnitCompletion(row, col);
+            }
+
+            renderBoard(); // Cập nhật hiển thị ngay lập tức
+        }
+
+        /**
+         * Renders the entire Sudoku grid based on the currentBoard state.
+         */
+        function renderBoard() {
+            const gridContainer = document.getElementById('sudoku-grid');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            
+            updateLivesDisplay(); 
+            
+            if (currentBoard.length === 0) {
+                gridContainer.innerHTML = '';
+                gridContainer.appendChild(loadingSpinner);
+                return;
+            }
+
+            if (loadingSpinner) loadingSpinner.remove();
+            gridContainer.innerHTML = '';
+
+            // Vô hiệu hóa input khi hết mạng hoặc xem lời giải
+            const isInputDisabled = gameLives <= 0 || isSolutionShown;
+
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                    const cellData = currentBoard[r][c];
+                    
+                    const cellDiv = document.createElement('div');
+                    cellDiv.className = 'cell transition duration-100';
+                    cellDiv.dataset.row = r;
+                    cellDiv.dataset.col = c;
+                    
+                    let classes = [];
+                    
+                    if (cellData.isFixed) {
+                        classes.push('fixed-cell');
+                    } else if (cellData.value !== 0) {
+                        // Màu đỏ/xanh cho số người dùng nhập
+                        classes.push(cellData.isError ? 'incorrect-user-value' : 'correct-user-value');
+                    }
+                    
+                    if (isInputDisabled) {
+                        // Nếu bị vô hiệu hóa, loại bỏ con trỏ và làm mờ nền grid
+                        cellDiv.style.cursor = 'default';
+                        if (gameLives <= 0) gridContainer.style.opacity = '0.5';
+                    } else {
+                        gridContainer.style.opacity = '1';
+                    }
+
+                    
+                    // Nổi bật ô được chọn
+                    if (r === selectedCell.row && c === selectedCell.col) {
+                        classes.push('selected-cell');
+                    } else if (selectedCell.row !== null && selectedCell.col !== null && 
+                                (r === selectedCell.row || c === selectedCell.col || 
+                                 (Math.floor(r / 3) === Math.floor(selectedCell.row / 3) && Math.floor(c / 3) === Math.floor(selectedCell.col / 3)))) {
+                        classes.push('highlight-cell');
+                    }
+                    
+                    // Viền khối 3x3
+                    if ((r + 1) % 3 === 0 && r !== 8) classes.push('block-divider-h');
+                    if ((c + 1) % 3 === 0 && c !== 8) classes.push('block-divider-v');
+                    
+                    cellDiv.className += ' ' + classes.join(' ');
+                    
+                    // Nội dung ô (Số lớn HOẶC Ghi chú nhỏ)
+                    if (cellData.value !== 0) {
+                        // Hiển thị số lớn
+                        cellDiv.textContent = cellData.value.toString();
+                    } else if (cellData.notes.length > 0) {
+                        // Hiển thị ghi chú trong lưới 3x3
+                        cellDiv.classList.remove('flex', 'justify-center', 'items-center');
+                        cellDiv.classList.add('note-grid');
+
+                        for (let i = 1; i <= 9; i++) {
+                            const noteSpan = document.createElement('span');
+                            noteSpan.textContent = cellData.notes.includes(i) ? i.toString() : '';
+                            noteSpan.className = 'note-item';
+                            cellDiv.appendChild(noteSpan);
+                        }
+                    } else {
+                        // Ô trống
+                        cellDiv.textContent = '';
+                    }
+
+                    // Thêm trình xử lý nhấp chuột để chọn ô
+                    cellDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (isInputDisabled && !cellData.isFixed) return; 
+
+                        selectedCell = { row: r, col: c };
+                        renderBoard(); 
+                    });
+
+                    gridContainer.appendChild(cellDiv);
+                }
+            }
+        }
+
+        // --- EVENT LISTENERS (TRÌNH LẮNG NGHE SỰ KIỆN) ---
+
+        /**
+         * Setup all necessary event listeners for the UI.
+         */
+        function setupEventListeners() {
+            // Nút bắt đầu ván mới
+            const newGameHandler = () => {
+                hideGameOverModal(); 
+                startNewGame();
+            }
+            document.getElementById('new-game-btn').addEventListener('click', newGameHandler);
+            document.getElementById('modal-new-game-btn').addEventListener('click', newGameHandler);
+            
+            // Nút Đáp án trong modal
+            document.getElementById('modal-show-solution-btn').addEventListener('click', () => {
+                showSolution();
+                hideGameOverModal(); 
+            });
+
+            // Nút chuyển đổi Chế độ Ghi chú
+            document.getElementById('note-mode-btn').addEventListener('click', () => {
+                isNoteMode = !isNoteMode;
+                updateNoteModeButton();
+                saveBoard();
+            });
+
+
+            // Gán trình xử lý cho bàn phím số
+            document.querySelectorAll('.num-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const value = parseInt(button.dataset.value, 10);
+                    handleInput(value);
+                });
+            });
+
+            // Xử lý đầu vào từ bàn phím máy tính
+            document.addEventListener('keydown', (e) => {
+                const key = e.key;
+                if (gameLives > 0 && !isSolutionShown) { 
+                    if (key >= '1' && key <= '9') {
+                        handleInput(parseInt(key, 10)); 
+                    } else if (key === '0' || key === 'Delete' || key === 'Backspace') {
+                        handleInput(0); 
+                    } else if (selectedCell.row !== null && selectedCell.col !== null) {
+                        let { row, col } = selectedCell;
+                        if (key === 'ArrowUp' || key === 'w') row = Math.max(0, row - 1);
+                        else if (key === 'ArrowDown' || key === 's') row = Math.min(8, row + 1);
+                        else if (key === 'ArrowLeft' || key === 'a') col = Math.max(0, col - 1);
+                        else if (key === 'ArrowRight' || key === 'd') col = Math.min(8, col + 1);
+                        
+                        if (row !== selectedCell.row || col !== selectedCell.col) {
+                            selectedCell = { row, col };
+                            renderBoard();
+                        }
+                    }
+                }
+            });
+            
+            // Bỏ chọn ô khi nhấp bên ngoài lưới
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#sudoku-grid') && !e.target.closest('#game-over-modal') && selectedCell.row !== null) {
+                    selectedCell = { row: null, col: null };
+                    renderBoard();
+                }
+            });
+        }
+
+        // --- INITIALIZATION (KHỞI TẠO) ---
+
+        /**
+         * Initializes Firebase and authentication.
+         */
+        async function initFirebase() {
+            // Kiểm tra xem cấu hình Firebase có hợp lệ hay không
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.log("Firebase config is missing. Running in offline mode (no persistence)."); 
+                isFirestoreAvailable = false;
+                isAuthReady = true; 
+                startNewGame();
+                return;
+            }
+            
+            isFirestoreAvailable = true;
+
+            setLogLevel('debug'); 
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            // Lắng nghe trạng thái xác thực
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    listenForBoardUpdates();
+                } else {
+                    try {
+                        const token = initialAuthToken; 
+                        if (token) {
+                            await signInWithCustomToken(auth, token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Authentication failed:", error); 
+                        userId = 'anonymous_error';
+                        isAuthReady = true;
+                        listenForBoardUpdates(); 
+                    }
+                }
+            });
+            
+            // Bắt đầu đồng hồ hiện tại (chạy liên tục)
+            setInterval(updateClockDisplay, 1000);
+            updateClockDisplay();
+        }
+
+        // Bắt đầu ứng dụng sau khi DOM đã tải
+        window.onload = () => {
+            initFirebase();
+            setupEventListeners();
+        };
+
+    </script>
+</body>
+</html>
